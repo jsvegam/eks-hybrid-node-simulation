@@ -1,172 +1,79 @@
-# modules/eks/main.tf
-resource "aws_iam_role" "cluster" {
-  name = "${var.cluster_name}-cluster-role"
+########################################################
+# modules/eks/main.tf — Wrapper del módulo oficial EKS
+########################################################
 
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17",
-    Statement = [
-      {
-        Action = "sts:AssumeRole",
-        Effect = "Allow",
-        Principal = {
-          Service = "eks.amazonaws.com"
+terraform {
+  required_version = ">= 1.6.0"
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = ">= 5.50"
+    }
+  }
+}
+
+module "eks" {
+  source  = "terraform-aws-modules/eks/aws"
+  version = "~> 21.0"
+
+  # Identidad y versión (mapeo desde variables del hijo)
+  name               = var.cluster_name
+  kubernetes_version = var.cluster_version
+
+  # Red
+  vpc_id     = var.vpc_id
+  subnet_ids = var.subnet_ids
+
+  # Autenticación (CAM)
+  authentication_mode = var.authentication_mode
+
+  # Endpoint (al menos uno true)
+  endpoint_public_access  = var.endpoint_public_access
+  endpoint_private_access = var.endpoint_private_access
+
+  # (Opcional) Redes híbridas: se pasan vacías si no hay CIDRs
+  remote_network_config = {
+    remote_node_networks = { cidrs = var.remote_node_cidr == null ? [] : [var.remote_node_cidr] }
+    remote_pod_networks  = { cidrs = var.remote_pod_cidr == null ? [] : [var.remote_pod_cidr] }
+  }
+
+  # Access Entry admin por CAM (solo si se pasa un ARN)
+  access_entries = var.cluster_admin_principal_arn == null ? {} : {
+    admin = {
+      principal_arn = var.cluster_admin_principal_arn
+      type          = "STANDARD"
+      access_policy_associations = {
+        cluster_admin = {
+          policy_arn   = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+          access_scope = { type = "cluster" }
         }
       }
-    ]
-  })
-}
+    }
+  }
 
-resource "aws_iam_role_policy_attachment" "cluster_eks_policy" {
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
-  role       = aws_iam_role.cluster.name
-}
+  # Managed Node Group (con bootstrap forzado)
+  eks_managed_node_groups = {
+    default = {
+      desired_size   = var.desired_size
+      min_size       = var.min_size
+      max_size       = var.max_size
+      instance_types = var.instance_types
+      capacity_type  = var.capacity_type
+      disk_size      = var.disk_size
 
-resource "aws_iam_role" "nodes" {
-  name = "${var.cluster_name}-node-role"
+      ami_type = "AL2023_x86_64_STANDARD"
+      ami_id   = var.managed_node_ami_id # si es null, el módulo usará SSM
 
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17",
-    Statement = [
-      {
-        Action = "sts:AssumeRole",
-        Effect = "Allow",
-        Principal = {
-          Service = "ec2.amazonaws.com"
-        }
+      enable_bootstrap_user_data = true
+      bootstrap_extra_args       = ""
+
+      iam_role_additional_policies = {
+        eks_worker = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
+        eks_cni    = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
+        ecr_ro     = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
       }
-    ]
-  })
-}
-
-resource "aws_iam_role_policy_attachment" "node_worker_policy" {
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
-  role       = aws_iam_role.nodes.name
-}
-
-resource "aws_iam_role_policy_attachment" "node_ecr_policy" {
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
-  role       = aws_iam_role.nodes.name
-}
-
-resource "aws_iam_role_policy_attachment" "node_cni_policy" {
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
-  role       = aws_iam_role.nodes.name
-}
-
-resource "aws_security_group" "nodes" {
-  name_prefix = "${var.cluster_name}-nodes"
-  description = "Security group for all nodes in the cluster"
-  vpc_id      = var.vpc_id
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = merge(
-    var.tags,
-    {
-      "Name" = "${var.cluster_name}-nodes"
     }
-  )
-}
-
-resource "aws_security_group_rule" "nodes_ingress_self" {
-  description              = "Allow node to communicate with each other"
-  from_port                = 0
-  to_port                  = 65535
-  protocol                 = "-1"
-  security_group_id        = aws_security_group.nodes.id
-  source_security_group_id = aws_security_group.nodes.id
-  type                     = "ingress"
-}
-
-resource "aws_security_group_rule" "nodes_ingress_cluster" {
-  description              = "Allow worker Kubelets and pods to receive communication from the cluster control plane"
-  from_port                = 1025
-  to_port                  = 65535
-  protocol                 = "tcp"
-  security_group_id        = aws_security_group.nodes.id
-  source_security_group_id = aws_eks_cluster.cluster.vpc_config[0].cluster_security_group_id
-  type                     = "ingress"
-}
-
-
-# Main EKS Cluster Resource
-resource "aws_eks_cluster" "cluster" {
-  name     = var.cluster_name
-  role_arn = aws_iam_role.cluster.arn
-  version  = var.cluster_version
-
-  vpc_config {
-    subnet_ids              = var.subnet_ids
-    security_group_ids      = [aws_security_group.nodes.id]
-    endpoint_private_access = var.endpoint_private_access
-    endpoint_public_access  = var.endpoint_public_access
   }
 
-  depends_on = [
-    aws_iam_role_policy_attachment.cluster_eks_policy
-  ]
-}
-
-resource "aws_eks_node_group" "nodes" {
-  cluster_name    = aws_eks_cluster.cluster.name
-  node_group_name = "${var.cluster_name}-nodes"
-  node_role_arn   = aws_iam_role.nodes.arn
-  subnet_ids      = var.subnet_ids
-  version         = var.cluster_version
-
-  scaling_config {
-    desired_size = var.desired_size
-    max_size     = var.max_size
-    min_size     = var.min_size
-  }
-
-  ami_type       = var.ami_type
-  capacity_type  = var.capacity_type
-  instance_types = var.instance_types
-  disk_size      = var.disk_size
-
-  remote_access {
-    ec2_ssh_key               = var.key_name
-    source_security_group_ids = var.remote_access_sg_ids
-  }
-
-  tags = merge(
-    var.tags,
-    {
-      "kubernetes.io/cluster/${var.cluster_name}" = "owned"
-    }
-  )
-
-  lifecycle {
-    ignore_changes = [scaling_config[0].desired_size]
-  }
-
-  depends_on = [
-    aws_iam_role_policy_attachment.node_worker_policy,
-    aws_iam_role_policy_attachment.node_ecr_policy,
-    aws_iam_role_policy_attachment.node_cni_policy,
-    kubernetes_config_map.aws_auth
-  ]
-}
-
-resource "kubernetes_config_map" "aws_auth" {
-  metadata {
-    name      = "aws-auth"
-    namespace = "kube-system"
-  }
-
-  data = {
-    mapRoles = yamlencode([{
-      rolearn  = aws_iam_role.nodes.arn
-      username = "system:node:{{EC2PrivateDNSName}}"
-      groups   = ["system:bootstrappers", "system:nodes"]
-    }])
-  }
-
-  depends_on = [aws_eks_cluster.cluster]
+  tags = var.tags
 }
