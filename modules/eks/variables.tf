@@ -1,93 +1,123 @@
-# modules/eks/variables.tf
 variable "cluster_name" {
-  description = "Name of the EKS cluster"
+  description = "Nombre del clúster EKS (se mapea a 'name' del módulo oficial)."
   type        = string
 }
 
-variable "cluster_version" {
-  description = "Kubernetes version"
+variable "kubernetes_version" {
+  description = "Versión de Kubernetes para el control plane (p. ej., 1.29)."
   type        = string
-  default     = "1.24"
 }
 
 variable "vpc_id" {
-  description = "VPC ID where the cluster will be deployed"
+  description = "VPC donde vive el clúster."
   type        = string
 }
 
 variable "subnet_ids" {
-  description = "List of subnet IDs for the cluster"
+  description = "Subnets para el control plane y/o data plane."
   type        = list(string)
 }
 
-variable "desired_size" {
-  description = "Desired number of worker nodes"
-  type        = number
-  default     = 2
-}
-
-variable "max_size" {
-  description = "Maximum number of worker nodes"
-  type        = number
-  default     = 3
-}
-
-variable "min_size" {
-  description = "Minimum number of worker nodes"
-  type        = number
-  default     = 1
-}
-
-variable "instance_types" {
-  description = "List of EC2 instance types for worker nodes"
-  type        = list(string)
-  default     = ["t3.medium"]
-}
-
-variable "ami_type" {
-  description = "AMI type for worker nodes"
+variable "authentication_mode" {
+  description = "Modo de autenticación de EKS (p. ej., API_AND_CONFIG_MAP)."
   type        = string
-  default     = "AL2_x86_64"
 }
 
-variable "capacity_type" {
-  description = "Capacity type for nodes (ON_DEMAND or SPOT)"
-  type        = string
-  default     = "ON_DEMAND"
+variable "cluster_endpoint_public_access" {
+  description = "Habilita acceso público al endpoint del API server."
+  type        = bool
 }
 
-variable "disk_size" {
-  description = "Disk size for worker nodes"
-  type        = number
-  default     = 20
+variable "cluster_endpoint_private_access" {
+  description = "Habilita acceso privado al endpoint del API server."
+  type        = bool
 }
 
-variable "key_name" {
-  description = "SSH key name for worker nodes"
+# (Opcional) Config de redes híbridas
+variable "remote_node_cidr" {
+  description = "CIDR de los nodos remotos (hybrid)."
   type        = string
   default     = null
 }
 
-variable "remote_access_sg_ids" {
-  description = "List of security group IDs for remote access"
+variable "remote_pod_cidr" {
+  description = "CIDR de los pods remotos (hybrid)."
+  type        = string
+  default     = null
+}
+
+# Access Entry admin (CAM)
+variable "cluster_admin_principal_arn" {
+  description = "ARN del principal IAM que tendrá permisos de admin (CAM)."
+  type        = string
+}
+
+# Parámetros del Managed Node Group
+variable "desired_size" {
+  description = "Tamaño deseado del node group."
+  type        = number
+}
+
+variable "min_size" {
+  description = "Tamaño mínimo del node group."
+  type        = number
+}
+
+variable "max_size" {
+  description = "Tamaño máximo del node group."
+  type        = number
+}
+
+variable "instance_types" {
+  description = "Tipos de instancia para el node group."
   type        = list(string)
-  default     = []
 }
 
-variable "endpoint_private_access" {
-  description = "Enable private access to the Kubernetes API server"
-  type        = bool
-  default     = false
+variable "capacity_type" {
+  description = "Tipo de capacidad del node group (ON_DEMAND o SPOT)."
+  type        = string
+  validation {
+    condition     = contains(["ON_DEMAND", "SPOT"], var.capacity_type)
+    error_message = "capacity_type debe ser ON_DEMAND o SPOT."
+  }
 }
 
-variable "endpoint_public_access" {
-  description = "Enable public access to the Kubernetes API server"
-  type        = bool
-  default     = true
+variable "disk_size" {
+  description = "Tamaño del disco (GiB) para los nodos."
+  type        = number
+}
+
+# AMI explícita para el node group (opcional)
+variable "managed_node_ami_id" {
+  description = "AMI ID para el node group (si no se usa SSM)."
+  type        = string
+  default     = null
 }
 
 variable "tags" {
-  description = "Additional tags for all resources"
+  description = "Etiquetas comunes."
   type        = map(string)
   default     = {}
 }
+
+
+# Si tu modules/eks/main.tf usa aws_eks_cluster con:
+#   version  = var.cluster_version
+#   vpc_config { endpoint_private_access = var.endpoint_private_access
+#                endpoint_public_access  = var.endpoint_public_access }
+
+variable "cluster_version" {
+  description = "Versión de Kubernetes del control plane (p.ej. 1.29)."
+  type        = string
+}
+
+variable "endpoint_private_access" {
+  description = "Acceso privado al endpoint del API server."
+  type        = bool
+}
+
+variable "endpoint_public_access" {
+  description = "Acceso público al endpoint del API server."
+  type        = bool
+}
+
