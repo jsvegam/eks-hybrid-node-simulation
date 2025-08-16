@@ -1,109 +1,97 @@
-########################################################
-# modules/eks/variables.tf — Variables del módulo hijo
-########################################################
-
+# modules/eks/variables.tf
 variable "cluster_name" {
-  description = "Nombre del clúster EKS."
+  description = "Name of the EKS cluster"
   type        = string
 }
 
 variable "cluster_version" {
-  description = "Versión de Kubernetes del control plane (p.ej., 1.29)."
+  description = "Kubernetes version"
   type        = string
+  default     = "1.24"
 }
 
 variable "vpc_id" {
-  description = "VPC donde vive el clúster."
+  description = "VPC ID where the cluster will be deployed"
   type        = string
 }
 
 variable "subnet_ids" {
-  description = "Subnets (privadas o públicas) para el clúster/nodos."
+  description = "List of subnet IDs for the cluster"
   type        = list(string)
 }
 
-variable "endpoint_public_access" {
-  description = "Acceso público al endpoint del API server."
-  type        = bool
-}
-
-variable "endpoint_private_access" {
-  description = "Acceso privado al endpoint del API server."
-  type        = bool
-}
-
 variable "desired_size" {
-  description = "Tamaño deseado del node group."
-  type        = number
-  default     = 1
-}
-
-variable "min_size" {
-  description = "Tamaño mínimo del node group."
-  type        = number
-  default     = 1
-}
-
-variable "max_size" {
-  description = "Tamaño máximo del node group."
+  description = "Desired number of worker nodes"
   type        = number
   default     = 2
 }
 
+variable "max_size" {
+  description = "Maximum number of worker nodes"
+  type        = number
+  default     = 3
+}
+
+variable "min_size" {
+  description = "Minimum number of worker nodes"
+  type        = number
+  default     = 1
+}
+
 variable "instance_types" {
-  description = "Tipos de instancia para el node group."
+  description = "List of EC2 instance types for worker nodes"
   type        = list(string)
-  default     = ["t3.small"]
+  default     = ["t3.medium"]
+}
+
+variable "ami_type" {
+  description = "AMI type for worker nodes"
+  type        = string
+  default     = "AL2_x86_64"
 }
 
 variable "capacity_type" {
-  description = "Tipo de capacidad del node group."
+  description = "Capacity type for nodes (ON_DEMAND or SPOT)"
   type        = string
   default     = "ON_DEMAND"
-  validation {
-    condition     = contains(["ON_DEMAND", "SPOT"], var.capacity_type)
-    error_message = "capacity_type debe ser ON_DEMAND o SPOT."
-  }
 }
 
 variable "disk_size" {
-  description = "Tamaño del disco (GiB) para los nodos."
+  description = "Disk size for worker nodes"
   type        = number
   default     = 20
 }
 
-variable "managed_node_ami_id" {
-  description = "AMI ID para el node group (si quieres forzar una AMI concreta)."
+variable "key_name" {
+  description = "SSH key name for worker nodes"
   type        = string
   default     = null
 }
 
-variable "remote_node_cidr" {
-  description = "CIDR de los nodos remotos (hybrid)."
-  type        = string
-  default     = null
+variable "remote_access_sg_ids" {
+  description = "List of security group IDs for remote access"
+  type        = list(string)
+  default     = []
 }
 
-variable "remote_pod_cidr" {
-  description = "CIDR de los pods remotos (hybrid)."
-  type        = string
-  default     = null
+variable "endpoint_private_access" {
+  description = "Enable private access to the Kubernetes API server"
+  type        = bool
+  default     = false
 }
 
-variable "cluster_admin_principal_arn" {
-  description = "ARN del principal IAM para admin del cluster (CAM)."
-  type        = string
-  default     = null
-}
-
-variable "authentication_mode" {
-  description = "Modo de autenticación (API, CONFIG_MAP, API_AND_CONFIG_MAP)."
-  type        = string
-  default     = "API_AND_CONFIG_MAP"
+variable "endpoint_public_access" {
+  description = "Enable public access to the Kubernetes API server"
+  type        = bool
+  default     = true
 }
 
 variable "tags" {
-  description = "Etiquetas comunes para todos los recursos."
+  description = "Additional tags for all resources"
   type        = map(string)
   default     = {}
 }
+
+variable "authentication_mode" {
+  type = string
+} # "API" o "API_AND_CONFIG_MAP"
